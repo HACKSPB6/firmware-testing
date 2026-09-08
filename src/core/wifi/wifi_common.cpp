@@ -9,13 +9,55 @@
 #include "core/wifi/wifi_mac.h"
 #include "esp_wifi.h"
 #include "modules/ble/ble_common.h"
+#include <array>
 #include <esp_event.h>
 #include <esp_netif.h>
 #include <globals.h>
-#include <array>
 
 static TaskHandle_t timezoneTaskHandle = NULL;
 static bool wifiTransitioning = false;
+
+String wifiDisplaySsid(const String &ssid) {
+    static const char *const russianMap[] = {"A", "B", "V", "G", "D",  "E",  "Yo", "Zh", "Z",
+                                             "I", "Y", "K", "L", "M",  "N",  "O",  "P",  "R",
+                                             "S", "T", "U", "F", "Kh", "Ts", "Ch", "Sh", "Shch",
+                                             "",  "Y", "",  "E", "Yu", "Ya"};
+
+    String result;
+    result.reserve(ssid.length() + 8);
+    for (size_t index = 0; index < ssid.length();) {
+        uint8_t first = static_cast<uint8_t>(ssid[index]);
+        if ((first == 0xD0 || first == 0xD1) && index + 1 < ssid.length()) {
+            uint8_t second = static_cast<uint8_t>(ssid[index + 1]);
+            uint16_t codePoint = 0;
+            if (first == 0xD0 && second >= 0x90 && second <= 0xAF) {
+                codePoint = second - 0x90;
+            } else if (first == 0xD0 && second >= 0xB0 && second <= 0xBF) {
+                codePoint = second - 0xB0;
+            } else if (first == 0xD1 && second >= 0x80 && second <= 0x8F) {
+                codePoint = second - 0x80 + 17;
+            } else if (first == 0xD0 && second == 0x81) {
+                result += "Yo";
+                index += 2;
+                continue;
+            } else if (first == 0xD1 && second == 0x91) {
+                result += "yo";
+                index += 2;
+                continue;
+            }
+
+            if (codePoint < 0x40) {
+                result += russianMap[codePoint];
+                index += 2;
+                continue;
+            }
+        }
+
+        result += static_cast<char>(first);
+        index++;
+    }
+    return result;
+}
 
 static void setConfiguredWifiHostname() {
     const char *hostname = bruceConfig.wifiHostnameEnabled ? bruceConfig.wifiHostname.c_str() : "esp32 bruce";
@@ -87,7 +129,7 @@ void ensureWifiPlatform() {
     }
 }
 
-bool _wifiConnect(const String &ssid, int encryption, int32_t channel, const uint8_t* bssid) {
+bool _wifiConnect(const String &ssid, int encryption, int32_t channel, const uint8_t *bssid) {
     String password = bruceConfig.getWifiPassword(ssid);
     if (password == "" && encryption > 0) { password = keyboard(password, 63, "Network Password:", true); }
     if (password == "\x1B") return false;
@@ -131,7 +173,7 @@ bool _wifiConnect(const String &ssid, int encryption, int32_t channel, const uin
     return connected;
 }
 
-bool _connectToWifiNetwork(const String &ssid, const String &pwd, int32_t channel, const uint8_t* bssid) {
+bool _connectToWifiNetwork(const String &ssid, const String &pwd, int32_t channel, const uint8_t *bssid) {
     if (FORCE_RADIO_TEARDOWN_ON_SWITCH) {
         if (BLEConnected) {
             displayWarning("Board with no PSRAM, closing BLE Stack");
@@ -267,7 +309,7 @@ bool wifiConnectMenu(wifi_mode_t mode) {
                         int encryptionType = WiFi.encryptionType(i);
                         int32_t rssi = WiFi.RSSI(i);
                         int32_t ch = WiFi.channel(i);
-                        uint8_t* bssidPtr = WiFi.BSSID(i);
+                        uint8_t *bssidPtr = WiFi.BSSID(i);
                         std::array<uint8_t, 6> bssidArr;
                         if (bssidPtr) memcpy(bssidArr.data(), bssidPtr, 6);
 
@@ -286,15 +328,18 @@ bool wifiConnectMenu(wifi_mode_t mode) {
                             default: encryptionTypeStr = "Unknown"; break;
                         }
 
-                        String optionText = encryptionPrefix + ssid + "(" + String(rssi) + "|" +
-                                            encryptionTypeStr + "|ch." + String(ch) + ")";
+                        String optionText = encryptionPrefix + wifiDisplaySsid(ssid) + "(" + String(rssi) +
+                                            "|" + encryptionTypeStr + "|ch." + String(ch) + ")";
 
-                        options.push_back({optionText.c_str(), [&selSsid, &selEnc, &selCh, &selBssid, ssid, encryptionType, ch, bssidArr]() {
-                                               selSsid = ssid;
-                                               selEnc = encryptionType;
-                                               selCh = ch;
-                                               memcpy(selBssid, bssidArr.data(), 6);
-                                           }});
+                        options.push_back(
+                            {optionText.c_str(),
+                             [&selSsid, &selEnc, &selCh, &selBssid, ssid, encryptionType, ch, bssidArr]() {
+                                 selSsid = ssid;
+                                 selEnc = encryptionType;
+                                 selCh = ch;
+                                 memcpy(selBssid, bssidArr.data(), 6);
+                             }}
+                        );
                     }
                 }
                 WiFi.scanDelete();
@@ -371,7 +416,7 @@ void wifiConnectTask(void *pvParameters) {
         if (pwd == "") continue;
 
         int32_t ch = WiFi.channel(i);
-        uint8_t* bssid = WiFi.BSSID(i);
+        uint8_t *bssid = WiFi.BSSID(i);
         WiFi.begin(ssid.c_str(), pwd.length() > 0 ? pwd.c_str() : NULL, ch, bssid);
         for (int i = 0; i < 50; i++) {
             if (WiFi.isConnected()) {

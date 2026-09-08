@@ -33,6 +33,8 @@ bool wifiConnecttoKnownNet(void);
  */
 String checkMAC();
 
+String wifiDisplaySsid(const String &ssid);
+
 /**
  * @brief Transmits a raw 802.11 frame while respecting TX-buffer backpressure.
  *
@@ -63,8 +65,10 @@ void ensureWifiPlatform();
 /**
  * @brief Connects to wifiNetwork
  */
-bool _wifiConnect(const String &ssid, int encryption, int32_t channel = 0, const uint8_t* bssid = nullptr);
-bool _connectToWifiNetwork(const String &ssid, const String &pwd, int32_t channel = 0, const uint8_t* bssid = nullptr);
+bool _wifiConnect(const String &ssid, int encryption, int32_t channel = 0, const uint8_t *bssid = nullptr);
+bool _connectToWifiNetwork(
+    const String &ssid, const String &pwd, int32_t channel = 0, const uint8_t *bssid = nullptr
+);
 
 /**
  * @brief sets up wifi in AP mode
